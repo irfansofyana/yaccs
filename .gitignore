@@ -1,0 +1,10 @@
+# Environment files
+.env
+
+# Backup files
+*.bak
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
