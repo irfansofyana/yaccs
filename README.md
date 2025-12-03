@@ -309,15 +309,6 @@ To modify YACCS:
 2. Test your changes
 3. Run the installer to update: `bash install.sh`
 
-## License
-
-[Your License Here]
-
 ## Contributing
 
 Contributions welcome! Please submit issues and pull requests.
-
-## Support
-
-- Report issues: [GitHub Issues]
-- Discuss: [GitHub Discussions]
