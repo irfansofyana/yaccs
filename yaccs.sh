@@ -90,6 +90,48 @@ get_config_value() {
     grep "^export ${var_name}=" "$config_file" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || echo ""
 }
 
+# Extract all custom variables from config file as KEY=VALUE pairs
+get_custom_vars_from_config() {
+    local config_file="$1"
+
+    if [ ! -f "$config_file" ]; then
+        return 0
+    fi
+
+    # Extract lines between YACCS_CUSTOM_VARS_START and YACCS_CUSTOM_VARS_END
+    sed -n '/# YACCS_CUSTOM_VARS_START/,/# YACCS_CUSTOM_VARS_END/p' "$config_file" | \
+        grep "^export " | \
+        grep -v "YACCS_CUSTOM_VARS" | \
+        sed 's/export //g' | \
+        sed 's/"//g'
+}
+
+# Get all custom variable names from config file
+get_all_custom_var_names() {
+    local config_file="$1"
+
+    get_custom_vars_from_config "$config_file" | cut -d'=' -f1
+}
+
+# Display formatted list of custom variables
+list_custom_vars() {
+    local config_file="$1"
+    local custom_vars
+
+    custom_vars=$(get_custom_vars_from_config "$config_file")
+
+    if [ -z "$custom_vars" ]; then
+        echo "  (no custom variables)"
+        return 0
+    fi
+
+    local index=1
+    while IFS='=' read -r key value; do
+        echo "  [$index] $key = \"$value\""
+        ((index++))
+    done <<< "$custom_vars"
+}
+
 # Redact API key for display (show first and last N characters)
 redact_key() {
     local key="$1"
@@ -108,6 +150,7 @@ write_config_file() {
     local opus_model="$7"
     local subagent_model="$8"
     local small_fast_model="$9"
+    local custom_vars_string="${10:-}"
 
     cat > "$config_file" << 'EOFCONFIG'
 #!/bin/bash
@@ -128,7 +171,43 @@ export ANTHROPIC_SMALL_FAST_MODEL="${small_fast_model}"
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 EOF
 
+    # Write custom variables section if provided
+    if [ -n "$custom_vars_string" ]; then
+        cat >> "$config_file" << 'EOFCUSTOM'
+
+# YACCS Custom Variables Section (auto-managed)
+# YACCS_CUSTOM_VARS_START
+EOFCUSTOM
+
+        # Write each custom variable
+        while IFS='=' read -r key value; do
+            if [ -n "$key" ] && [ -n "$value" ]; then
+                echo "export ${key}=\"${value}\"" >> "$config_file"
+            fi
+        done <<< "$custom_vars_string"
+
+        echo "# YACCS_CUSTOM_VARS_END" >> "$config_file"
+    fi
+
     chmod 600 "$config_file"
+}
+
+# Unset custom variables discovered from a config file
+unset_custom_vars_from_config() {
+    local config_file="$1"
+
+    if [ ! -f "$config_file" ]; then
+        return 0
+    fi
+
+    local var_names
+    var_names=$(get_all_custom_var_names "$config_file")
+
+    while IFS= read -r var_name; do
+        if [ -n "$var_name" ]; then
+            unset "$var_name" 2>/dev/null || true
+        fi
+    done <<< "$var_names"
 }
 
 # Unset all ANTHROPIC_* environment variables
@@ -254,6 +333,13 @@ cmd_configure() {
         [ -n "$smallfast_input" ] && small_fast_model="$smallfast_input"
     fi
 
+    # Ask about custom variables
+    echo
+    local custom_vars=""
+    if confirm_action "Add custom environment variables?"; then
+        custom_vars=$(cmd_configure_custom_vars_interactive)
+    fi
+
     # Show preview
     echo
     log_info "Configuration preview:"
@@ -265,6 +351,14 @@ cmd_configure() {
     echo "  Opus Model: $opus_model"
     echo "  Subagent Model: $subagent_model"
     echo "  Small/Fast Model: $small_fast_model"
+    if [ -n "$custom_vars" ]; then
+        echo "  Custom Variables:"
+        echo "$custom_vars" | while IFS='=' read -r key value; do
+            if [ -n "$key" ]; then
+                echo "    $key=\"$value\""
+            fi
+        done
+    fi
     echo
 
     if ! confirm_action "Save configuration?"; then
@@ -275,7 +369,7 @@ cmd_configure() {
     # Write configuration file
     write_config_file "$config_file" "$api_key" "$base_url" "$model_id" \
                       "$haiku_model" "$sonnet_model" "$opus_model" \
-                      "$subagent_model" "$small_fast_model"
+                      "$subagent_model" "$small_fast_model" "$custom_vars"
 
     log_success "Provider '$provider_name' configured successfully"
     echo "Config file: $config_file"
@@ -306,6 +400,18 @@ cmd_switch_provider() {
 
     # Clean slate - unset all ANTHROPIC variables
     unset_anthropic_vars
+
+    # Also unset custom variables from previously active provider
+    if [ -f "$ACTIVE_FILE" ]; then
+        local old_provider
+        old_provider=$(cat "$ACTIVE_FILE")
+        if [ "$old_provider" != "$provider" ]; then
+            local old_config="${PROVIDERS_DIR}/${old_provider}.sh"
+            if [ -f "$old_config" ]; then
+                unset_custom_vars_from_config "$old_config"
+            fi
+        fi
+    fi
 
     # Source provider configuration
     # shellcheck source=/dev/null
@@ -391,9 +497,16 @@ cmd_status() {
     echo "Active provider: $active_provider"
     echo "Config file: $config_file"
     echo
-    echo "Environment variables:"
+    echo "Standard Environment Variables:"
     local api_key=$(get_config_value "$config_file" "ANTHROPIC_AUTH_TOKEN")
-    grep "^export" "$config_file" | sed 's/export /  /' | sed "s/ANTHROPIC_AUTH_TOKEN=.*$/ANTHROPIC_AUTH_TOKEN=***REDACTED***/g"
+    grep "^export" "$config_file" | grep -v "# YACCS_CUSTOM_VARS" | sed 's/export /  /' | sed "s/ANTHROPIC_AUTH_TOKEN=.*$/ANTHROPIC_AUTH_TOKEN=***REDACTED***/g"
+
+    # Display custom variables if they exist
+    if grep -q "# YACCS_CUSTOM_VARS_START" "$config_file"; then
+        echo
+        echo "Custom Environment Variables:"
+        list_custom_vars "$config_file"
+    fi
 }
 
 # ========================
@@ -451,6 +564,7 @@ cmd_modify() {
     echo "  6. Opus Model: $current_opus_model"
     echo "  7. Subagent Model: $current_subagent_model"
     echo "  8. Small/Fast Model: $current_small_fast_model"
+    echo "  9. Manage Custom Variables"
     echo
 
     # Menu-driven interface for selecting fields to modify
@@ -468,11 +582,29 @@ cmd_modify() {
                     echo "Field $selection already selected"
                 fi
                 ;;
+            9)
+                # Launch custom variables submenu
+                cmd_modify_custom_vars "$provider_name" "$config_file"
+                echo
+                # Show menu again after returning from submenu
+                echo "Current configuration for '$provider_name':"
+                echo "  0. Provider Name: $provider_name"
+                echo "  1. Base URL: $current_base_url"
+                echo "  2. API Key: $(redact_key "$current_api_key") (${#current_api_key} chars)"
+                echo "  3. Main Model: $current_model_id"
+                echo "  4. Haiku Model: $current_haiku_model"
+                echo "  5. Sonnet Model: $current_sonnet_model"
+                echo "  6. Opus Model: $current_opus_model"
+                echo "  7. Subagent Model: $current_subagent_model"
+                echo "  8. Small/Fast Model: $current_small_fast_model"
+                echo "  9. Manage Custom Variables"
+                echo
+                ;;
             done|DONE)
                 break
                 ;;
             *)
-                echo "Invalid selection. Please enter a number (0-8) or 'done'."
+                echo "Invalid selection. Please enter a number (0-9) or 'done'."
                 ;;
         esac
     done
@@ -728,6 +860,260 @@ cmd_remove() {
 }
 
 # ========================
+#  Custom Variables Management
+# ========================
+
+# Validate custom variable name (must be valid shell identifier)
+validate_custom_var_name() {
+    local name="$1"
+
+    if ! [[ "$name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+        return 1
+    fi
+
+    # Check for reserved names
+    case "$name" in
+        ANTHROPIC_*|CLAUDE_CODE_*)
+            return 1
+            ;;
+    esac
+
+    return 0
+}
+
+# Add a custom variable to config file
+add_custom_var() {
+    local config_file="$1"
+    local var_name="$2"
+    local var_value="$3"
+
+    # Validate inputs
+    if ! validate_custom_var_name "$var_name"; then
+        log_error "Invalid variable name: $var_name"
+        return 1
+    fi
+
+    # Check if variable already exists
+    if grep -q "^export ${var_name}=" "$config_file" 2>/dev/null; then
+        log_error "Variable '$var_name' already exists"
+        return 1
+    fi
+
+    # Check if custom section exists, if not create it
+    if ! grep -q "# YACCS_CUSTOM_VARS_START" "$config_file"; then
+        cat >> "$config_file" << 'EOFCUSTOM'
+
+# YACCS Custom Variables Section (auto-managed)
+# YACCS_CUSTOM_VARS_START
+# YACCS_CUSTOM_VARS_END
+EOFCUSTOM
+    fi
+
+    # Add the variable before the END marker
+    sed -i '' "/# YACCS_CUSTOM_VARS_END/i\\
+export ${var_name}=\"${var_value}\"
+" "$config_file"
+
+    return 0
+}
+
+# Edit an existing custom variable
+edit_custom_var() {
+    local config_file="$1"
+    local var_name="$2"
+    local new_value="$3"
+
+    if ! grep -q "^export ${var_name}=" "$config_file" 2>/dev/null; then
+        log_error "Variable '$var_name' not found"
+        return 1
+    fi
+
+    # Update the variable value
+    sed -i '' "s|^export ${var_name}=.*|export ${var_name}=\"${new_value}\"|" "$config_file"
+    return 0
+}
+
+# Delete a custom variable from config file
+delete_custom_var() {
+    local config_file="$1"
+    local var_name="$2"
+
+    if ! grep -q "^export ${var_name}=" "$config_file" 2>/dev/null; then
+        log_error "Variable '$var_name' not found"
+        return 1
+    fi
+
+    # Remove the variable line
+    sed -i '' "/^export ${var_name}=/d" "$config_file"
+    return 0
+}
+
+# Interactive setup for custom variables during configuration
+cmd_configure_custom_vars_interactive() {
+    local custom_vars_string=""
+
+    while true; do
+        echo "Add custom variable? (y/n):"
+        if ! confirm_action ""; then
+            break
+        fi
+
+        echo
+        local var_name
+        var_name=$(prompt_input "Variable name: ")
+        if [ -z "$var_name" ]; then
+            echo "Skipping - variable name cannot be empty"
+            continue
+        fi
+
+        if ! validate_custom_var_name "$var_name"; then
+            log_error "Invalid variable name. Must be alphanumeric + underscore, cannot start with number"
+            echo "Reserved prefixes: ANTHROPIC_*, CLAUDE_CODE_*"
+            continue
+        fi
+
+        local var_value
+        var_value=$(prompt_input "Variable value: ")
+        if [ -z "$var_value" ]; then
+            echo "Skipping - variable value cannot be empty"
+            continue
+        fi
+
+        echo
+        log_info "Preview:"
+        echo "  $var_name=\"$var_value\""
+        echo
+
+        if confirm_action "Add this variable?"; then
+            if [ -z "$custom_vars_string" ]; then
+                custom_vars_string="${var_name}=${var_value}"
+            else
+                custom_vars_string="${custom_vars_string}
+${var_name}=${var_value}"
+            fi
+            log_success "Variable '$var_name' added"
+        fi
+        echo
+    done
+
+    echo "$custom_vars_string"
+}
+
+# Interactive submenu for managing custom variables
+cmd_modify_custom_vars() {
+    local provider_name="$1"
+    local config_file="$2"
+
+    while true; do
+        echo
+        echo "Custom Variables for '$provider_name':"
+        list_custom_vars "$config_file"
+        echo
+        echo "Options:"
+        echo "  a. Add new variable"
+        echo "  b. Edit existing variable"
+        echo "  c. Delete variable"
+        echo "  d. Return to main menu"
+        echo
+
+        local choice
+        choice=$(prompt_input "Select option (a/b/c/d): ")
+
+        case "$choice" in
+            a)
+                echo
+                local new_var_name
+                new_var_name=$(prompt_input "Variable name: ")
+                if [ -z "$new_var_name" ]; then
+                    log_error "Variable name cannot be empty"
+                    continue
+                fi
+
+                if ! validate_custom_var_name "$new_var_name"; then
+                    log_error "Invalid variable name. Must be alphanumeric + underscore, cannot start with number"
+                    echo "Reserved prefixes: ANTHROPIC_*, CLAUDE_CODE_*"
+                    continue
+                fi
+
+                local new_var_value
+                new_var_value=$(prompt_input "Variable value: ")
+                if [ -z "$new_var_value" ]; then
+                    log_error "Variable value cannot be empty"
+                    continue
+                fi
+
+                echo
+                log_info "Preview:"
+                echo "  $new_var_name=\"$new_var_value\""
+                echo
+
+                if confirm_action "Add this variable?"; then
+                    if add_custom_var "$config_file" "$new_var_name" "$new_var_value"; then
+                        log_success "Variable '$new_var_name' added"
+                    fi
+                fi
+                ;;
+            b)
+                echo
+                local edit_var_name
+                edit_var_name=$(prompt_input "Variable name to edit: ")
+                if [ -z "$edit_var_name" ]; then
+                    log_error "Variable name cannot be empty"
+                    continue
+                fi
+
+                local current_value
+                current_value=$(grep "^export ${edit_var_name}=" "$config_file" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || echo "")
+                if [ -z "$current_value" ]; then
+                    log_error "Variable '$edit_var_name' not found"
+                    continue
+                fi
+
+                echo "Current value: $current_value"
+                local new_edit_value
+                new_edit_value=$(prompt_input "New value: ")
+                if [ -z "$new_edit_value" ]; then
+                    log_error "Variable value cannot be empty"
+                    continue
+                fi
+
+                echo
+                log_info "Preview:"
+                echo "  $edit_var_name=\"$new_edit_value\""
+                echo
+
+                if confirm_action "Update this variable?"; then
+                    if edit_custom_var "$config_file" "$edit_var_name" "$new_edit_value"; then
+                        log_success "Variable '$edit_var_name' updated"
+                    fi
+                fi
+                ;;
+            c)
+                echo
+                local del_var_name
+                del_var_name=$(prompt_input "Variable name to delete: ")
+                if [ -z "$del_var_name" ]; then
+                    log_error "Variable name cannot be empty"
+                    continue
+                fi
+
+                if confirm_action "Delete variable '$del_var_name'?"; then
+                    if delete_custom_var "$config_file" "$del_var_name"; then
+                        log_success "Variable '$del_var_name' deleted"
+                    fi
+                fi
+                ;;
+            d)
+                break
+                ;;
+            *)
+                echo "Invalid option. Please select a, b, c, or d."
+                ;;
+        esac
+    done
+}
+
+# ========================
 #      Help Command
 # ========================
 
@@ -745,6 +1131,7 @@ COMMANDS:
 
   modify <provider>       Modify an existing provider configuration
                          Interactive menu to update specific fields
+                         Option 9: Manage custom environment variables
 
   <provider>             Switch to a provider and run Claude Code
                          Example: yaccs glm
@@ -754,7 +1141,7 @@ COMMANDS:
                          Shows active provider with [*]
 
   status                 Show currently active provider
-                         Displays current environment variables
+                         Displays both standard and custom environment variables
 
   default                Reset to default Claude Code subscription
                          Unsets all provider environment variables
@@ -792,10 +1179,24 @@ CONFIGURATION:
   Active provider tracking: ~/.yaccs/active
   Each provider file contains environment variable exports
 
+CUSTOM VARIABLES:
+  Each provider can have custom environment variables for provider-specific settings:
+
+  Examples:
+    - DISABLE_PROMPT_CACHING=1 (for providers without caching support like Qwen)
+    - ENABLE_DEBUG=true (for testing/debugging)
+    - CUSTOM_TIMEOUT=30 (for performance tuning)
+
+  Add custom variables:
+    yaccs configure <provider>     # Prompted during setup
+    yaccs modify <provider>        # Select option 9 to manage
+
 NOTES:
   - API Keys are stored in plaintext in ~/.yaccs/providers/
+  - Custom variables are also stored in plaintext (treat like API keys)
   - Files are created with restrictive permissions (chmod 600)
   - Use 'yaccs default' before sharing your system
+  - See https://code.claude.com/docs/en/settings#environment-variables for available variables
 EOF
 }
 
