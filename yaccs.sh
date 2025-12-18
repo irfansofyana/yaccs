@@ -103,7 +103,7 @@ get_custom_vars_from_config() {
         grep "^export " | \
         grep -v "YACCS_CUSTOM_VARS" | \
         sed 's/export //g' | \
-        sed 's/"//g'
+        sed 's/"//g' || true
 }
 
 # Get all custom variable names from config file
@@ -810,10 +810,14 @@ cmd_modify() {
         config_file="$new_config_file"
     fi
 
+    # Preserve existing custom variables
+    local existing_custom_vars
+    existing_custom_vars=$(get_custom_vars_from_config "$config_file")
+
     # Write configuration file
     write_config_file "$config_file" "$new_api_key" "$new_base_url" "$new_model_id" \
                       "$new_haiku_model" "$new_sonnet_model" "$new_opus_model" \
-                      "$new_subagent_model" "$new_small_fast_model"
+                      "$new_subagent_model" "$new_small_fast_model" "$existing_custom_vars"
     
     if [ "$provider_name" != "$new_provider_name" ]; then
         log_success "Provider '$provider_name' renamed to '$new_provider_name' and modified successfully"
