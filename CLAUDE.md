@@ -19,7 +19,7 @@ YACCS (Yet Another Claude Code Switcher) is a bash-based CLI tool that manages m
 └── active             # Tracks currently active provider
 ```
 
-Each provider configuration file (`~/.yaccs/providers/{name}.sh`) is a shell script that exports:
+Each provider configuration file (`~/.yaccs/providers/{name}.sh`) is a shell script that exports **9 standard variables**:
 - `ANTHROPIC_AUTH_TOKEN` - API authentication key
 - `ANTHROPIC_BASE_URL` - Provider's API endpoint
 - `ANTHROPIC_MODEL` - Main model identifier
@@ -29,6 +29,8 @@ Each provider configuration file (`~/.yaccs/providers/{name}.sh`) is a shell scr
 - `CLAUDE_CODE_SUBAGENT_MODEL` - Subagent model
 - `ANTHROPIC_SMALL_FAST_MODEL` - Small/fast model
 - `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` - Traffic optimization flag
+
+**Custom Variables Section:** Providers can optionally include provider-specific custom environment variables in a dedicated section (see Custom Variables Architecture below).
 
 ### Command Router Pattern
 
@@ -64,9 +66,80 @@ Commands that require user input (configure, remove) handle both interactive TTY
 1. Check if provider exists → offer to keep existing values
 2. Prompt for Base URL, API Key, Main Model ID
 3. Optionally customize per-tier models (haiku/sonnet/opus/subagent/small-fast)
-4. Show preview and confirm before writing
-5. Write config file with heredoc template
-6. Set restrictive permissions
+4. Optionally add custom environment variables (new feature)
+5. Show preview and confirm before writing
+6. Write config file with heredoc template (including custom variables section)
+7. Set restrictive permissions
+
+## Custom Variables Architecture
+
+### Overview
+Providers can have provider-specific custom environment variables beyond the 9 standard variables. Common use cases:
+- `DISABLE_PROMPT_CACHING=1` for providers without prompt caching support (e.g., Qwen)
+- `ENABLE_DEBUG=true` for debugging/testing configurations
+- `CUSTOM_TIMEOUT=30` for performance tuning
+
+### Storage Format
+Custom variables are stored in a dedicated section at the end of provider config files:
+
+```bash
+#!/bin/bash
+# YACCS Provider Configuration
+# Generated automatically - do not edit manually unless you know what you're doing
+
+export ANTHROPIC_AUTH_TOKEN="..."
+export ANTHROPIC_BASE_URL="..."
+# ... 7 more standard variables ...
+
+# YACCS Custom Variables Section (auto-managed)
+# YACCS_CUSTOM_VARS_START
+export DISABLE_PROMPT_CACHING="1"
+export CUSTOM_TIMEOUT="30"
+# YACCS_CUSTOM_VARS_END
+```
+
+**Key Design Points:**
+- Clear delimiters (`YACCS_CUSTOM_VARS_START` / `YACCS_CUSTOM_VARS_END`) for reliable parsing
+- Custom section is optional - configs without it work unchanged (backward compatible)
+- Variables are exported as `export NAME="VALUE"` statements for automatic sourcing
+
+### Implementation Functions
+
+**Parsing Functions:**
+- `get_custom_vars_from_config()` - Extract all custom vars as KEY=VALUE pairs from config file
+- `get_all_custom_var_names()` - Discover all custom var names (used for unsetting)
+- `list_custom_vars()` - Display formatted list of custom variables with indices
+
+**Management Functions:**
+- `validate_custom_var_name()` - Validate var names (must be shell identifiers, prevent ANTHROPIC_* and CLAUDE_CODE_* prefixes)
+- `add_custom_var()` - Add new custom variable to config file
+- `edit_custom_var()` - Update existing custom variable value
+- `delete_custom_var()` - Remove custom variable from config file
+
+**Interactive Functions:**
+- `cmd_configure_custom_vars_interactive()` - Setup custom vars during `yaccs configure`
+- `cmd_modify_custom_vars()` - Submenu in `yaccs modify` (option 9) for managing custom variables
+
+### Variable Lifecycle
+
+1. **Configuration Time:** User adds custom variables via `yaccs configure` or `yaccs modify`
+2. **Storage:** Variables written to config file in custom section
+3. **Provider Switching:**
+   - Custom vars from old provider are explicitly unset (via `unset_custom_vars_from_config()`)
+   - New provider config is sourced (custom vars automatically exported)
+4. **Display:** `yaccs status` shows custom variables in separate section
+
+### Validation Rules
+- Variable names must match regex: `[a-zA-Z_][a-zA-Z0-9_]*` (valid shell identifier)
+- Cannot shadow standard vars (reserved prefixes: `ANTHROPIC_*`, `CLAUDE_CODE_*`)
+- Empty values are not allowed
+- Special characters in values are automatically escaped in config files
+
+### Backward Compatibility
+- Existing configs without custom section work unchanged
+- No migration script needed (lazy loading of custom section)
+- Old configs automatically get custom section when modified through `yaccs modify`
+- Custom variables do not interfere with standard variable handling
 
 ## Development Commands
 
