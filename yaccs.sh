@@ -17,19 +17,51 @@ PROVIDERS_DIR="${YACCS_DIR}/providers"
 ACTIVE_FILE="${YACCS_DIR}/active"
 
 # ========================
+#      Color System
+# ========================
+
+# Initialize color variables based on TTY detection
+init_colors() {
+    if [[ -t 1 ]]; then
+        # Colors enabled (TTY detected)
+        RED='\033[0;31m'
+        GREEN='\033[0;32m'
+        BLUE='\033[0;34m'
+        CYAN='\033[0;36m'
+        YELLOW='\033[0;33m'
+        BOLD='\033[1m'
+        DIM='\033[2m'
+        RESET='\033[0m'
+    else
+        # Colors disabled (not a TTY - pipe, redirect, script)
+        RED=''
+        GREEN=''
+        BLUE=''
+        CYAN=''
+        YELLOW=''
+        BOLD=''
+        DIM=''
+        RESET=''
+    fi
+}
+
+# Initialize colors at startup
+init_colors
+
+# ========================
 #      Utility Functions
 # ========================
 
 log_info() {
-    echo "[INFO] $*"
+    echo -e "${BLUE}[INFO]${RESET} $*"
 }
 
 log_success() {
-    echo "[ OK ] $*"
+    echo -e "${GREEN}[ OK ]${RESET} $*"
 }
 
 log_error() {
-    echo "[ERR ] $*" >&2
+    echo -e "${RED}[ERR ]${RESET} $*" >&2
 }
 
 ensure_dirs_exist() {
@@ -56,18 +88,19 @@ prompt_input() {
     local prompt="$1"
     local is_silent="${2:-false}"
     local input
+    local colored_prompt="${CYAN}${prompt}${RESET}"
 
     if [ -t 0 ]; then
         if [ "$is_silent" = true ]; then
-            read -s -p "$prompt" input </dev/tty
+            read -s -p "$(echo -e "$colored_prompt")" input </dev/tty
         else
-            read -p "$prompt" input </dev/tty
+            read -p "$(echo -e "$colored_prompt")" input </dev/tty
         fi
     else
         if [ "$is_silent" = true ]; then
-            read -s -p "$prompt" input
+            read -s -p "$(echo -e "$colored_prompt")" input
         else
-            read -p "$prompt" input
+            read -p "$(echo -e "$colored_prompt")" input
         fi
     fi
     echo "$input"
@@ -77,8 +110,14 @@ prompt_input() {
 confirm_action() {
     local prompt="$1"
     local response
+    local colored_prompt="${YELLOW}${prompt}${RESET} ${DIM}(y/n):${RESET} "
 
-    response=$(prompt_input "$prompt (y/n): ")
+    # Use raw read to avoid double-colorizing through prompt_input
+    if [ -t 0 ]; then
+        read -p "$(echo -e "$colored_prompt")" response </dev/tty
+    else
+        read -p "$(echo -e "$colored_prompt")" response
+    fi
     [[ "$response" =~ ^[Yy]$ ]]
 }
 
@@ -121,13 +160,13 @@ list_custom_vars() {
     custom_vars=$(get_custom_vars_from_config "$config_file")
 
     if [ -z "$custom_vars" ]; then
-        echo "  (no custom variables)"
+        echo -e "  ${DIM}(no custom variables)${RESET}"
         return 0
     fi
 
     local index=1
     while IFS='=' read -r key value; do
-        echo "  [$index] $key = \"$value\""
+        echo -e "  ${DIM}[$index]${RESET} ${CYAN}$key${RESET} = \"$value\""
         ((index++))
     done <<< "$custom_vars"
 }
@@ -343,19 +382,19 @@ cmd_configure() {
     # Show preview
     echo
     log_info "Configuration preview:"
-    echo "  Base URL: $base_url"
-    echo "  API Key: $(redact_key "$api_key")"
-    echo "  Main Model: $model_id"
-    echo "  Haiku Model: $haiku_model"
-    echo "  Sonnet Model: $sonnet_model"
-    echo "  Opus Model: $opus_model"
-    echo "  Subagent Model: $subagent_model"
-    echo "  Small/Fast Model: $small_fast_model"
+    echo -e "  ${CYAN}Base URL:${RESET} $base_url"
+    echo -e "  ${CYAN}API Key:${RESET} ${YELLOW}$(redact_key "$api_key")${RESET}"
+    echo -e "  ${CYAN}Main Model:${RESET} $model_id"
+    echo -e "  ${CYAN}Haiku Model:${RESET} $haiku_model"
+    echo -e "  ${CYAN}Sonnet Model:${RESET} $sonnet_model"
+    echo -e "  ${CYAN}Opus Model:${RESET} $opus_model"
+    echo -e "  ${CYAN}Subagent Model:${RESET} $subagent_model"
+    echo -e "  ${CYAN}Small/Fast Model:${RESET} $small_fast_model"
     if [ -n "$custom_vars" ]; then
-        echo "  Custom Variables:"
+        echo -e "  ${CYAN}Custom Variables:${RESET}"
         echo "$custom_vars" | while IFS='=' read -r key value; do
             if [ -n "$key" ]; then
-                echo "    $key=\"$value\""
+                echo -e "    ${CYAN}$key${RESET}=\"$value\""
             fi
         done
     fi
@@ -456,16 +495,16 @@ cmd_list_providers() {
     IFS=$'\n' sorted_providers=($(sort <<<"${providers[*]}"))
     unset IFS
 
-    echo "Configured providers:"
+    echo -e "${BOLD}Configured providers:${RESET}"
     for provider in "${sorted_providers[@]}"; do
         local config_file="${PROVIDERS_DIR}/${provider}.sh"
         local base_url=$(get_config_value "$config_file" "ANTHROPIC_BASE_URL")
         local model=$(get_config_value "$config_file" "ANTHROPIC_MODEL")
 
         if [ "$provider" = "$active_provider" ]; then
-            printf "  [*] %-15s %s (model: %s)\n" "$provider" "$base_url" "$model"
+            printf "  ${GREEN}${BOLD}[*]${RESET} ${CYAN}%-15s${RESET} %s (model: %s)\n" "$provider" "$base_url" "$model"
         else
-            printf "  [ ] %-15s %s (model: %s)\n" "$provider" "$base_url" "$model"
+            printf "  ${DIM}[ ]${RESET} ${CYAN}%-15s${RESET} %s (model: %s)\n" "$provider" "$base_url" "$model"
         fi
     done
 }
@@ -494,17 +533,17 @@ cmd_status() {
         return 1
     fi
 
-    echo "Active provider: $active_provider"
-    echo "Config file: $config_file"
+    echo -e "${CYAN}Active provider:${RESET} ${GREEN}${BOLD}$active_provider${RESET}"
+    echo -e "${DIM}Config file: $config_file${RESET}"
     echo
-    echo "Standard Environment Variables:"
+    echo -e "${BOLD}Standard Environment Variables:${RESET}"
     local api_key=$(get_config_value "$config_file" "ANTHROPIC_AUTH_TOKEN")
-    grep "^export" "$config_file" | grep -v "# YACCS_CUSTOM_VARS" | sed 's/export /  /' | sed "s/ANTHROPIC_AUTH_TOKEN=.*$/ANTHROPIC_AUTH_TOKEN=***REDACTED***/g"
+    grep "^export" "$config_file" | grep -v "# YACCS_CUSTOM_VARS" | sed 's/export /  /' | sed "s/ANTHROPIC_AUTH_TOKEN=.*$/ANTHROPIC_AUTH_TOKEN=${YELLOW}***REDACTED***${RESET}/g"
 
     # Display custom variables if they exist
     if grep -q "# YACCS_CUSTOM_VARS_START" "$config_file"; then
         echo
-        echo "Custom Environment Variables:"
+        echo -e "${BOLD}Custom Environment Variables:${RESET}"
         list_custom_vars "$config_file"
     fi
 }
@@ -554,17 +593,17 @@ cmd_modify() {
     local current_small_fast_model=$(get_config_value "$config_file" "ANTHROPIC_SMALL_FAST_MODEL" || echo "$current_model_id")
 
     # Display current configuration in a user-friendly format
-    echo "Current configuration for '$provider_name':"
-    echo "  0. Provider Name: $provider_name"
-    echo "  1. Base URL: $current_base_url"
-    echo "  2. API Key: $(redact_key "$current_api_key") (${#current_api_key} chars)"
-    echo "  3. Main Model: $current_model_id"
-    echo "  4. Haiku Model: $current_haiku_model"
-    echo "  5. Sonnet Model: $current_sonnet_model"
-    echo "  6. Opus Model: $current_opus_model"
-    echo "  7. Subagent Model: $current_subagent_model"
-    echo "  8. Small/Fast Model: $current_small_fast_model"
-    echo "  9. Manage Custom Variables"
+    echo -e "${BOLD}Current configuration for '${CYAN}$provider_name${RESET}${BOLD}':${RESET}"
+    echo -e "  ${BOLD}0.${RESET} ${CYAN}Provider Name:${RESET} $provider_name"
+    echo -e "  ${BOLD}1.${RESET} ${CYAN}Base URL:${RESET} $current_base_url"
+    echo -e "  ${BOLD}2.${RESET} ${CYAN}API Key:${RESET} ${YELLOW}$(redact_key "$current_api_key")${RESET} ${DIM}(${#current_api_key} chars)${RESET}"
+    echo -e "  ${BOLD}3.${RESET} ${CYAN}Main Model:${RESET} $current_model_id"
+    echo -e "  ${BOLD}4.${RESET} ${CYAN}Haiku Model:${RESET} $current_haiku_model"
+    echo -e "  ${BOLD}5.${RESET} ${CYAN}Sonnet Model:${RESET} $current_sonnet_model"
+    echo -e "  ${BOLD}6.${RESET} ${CYAN}Opus Model:${RESET} $current_opus_model"
+    echo -e "  ${BOLD}7.${RESET} ${CYAN}Subagent Model:${RESET} $current_subagent_model"
+    echo -e "  ${BOLD}8.${RESET} ${CYAN}Small/Fast Model:${RESET} $current_small_fast_model"
+    echo -e "  ${BOLD}9.${RESET} ${CYAN}Manage Custom Variables${RESET}"
     echo
 
     # Menu-driven interface for selecting fields to modify
@@ -771,15 +810,15 @@ cmd_modify() {
     # Preview of changes
     echo
     log_info "Changes preview:"
-    [ "$provider_name" != "$new_provider_name" ] && echo "  Provider Name: $provider_name -> $new_provider_name"
-    [ "$current_base_url" != "$new_base_url" ] && echo "  Base URL: $current_base_url -> $new_base_url"
-    [ "$current_api_key" != "$new_api_key" ] && echo "  API Key: *** -> ***"
-    [ "$current_model_id" != "$new_model_id" ] && echo "  Main Model: $current_model_id -> $new_model_id"
-    [ "$current_haiku_model" != "$new_haiku_model" ] && echo "  Haiku Model: $current_haiku_model -> $new_haiku_model"
-    [ "$current_sonnet_model" != "$new_sonnet_model" ] && echo "  Sonnet Model: $current_sonnet_model -> $new_sonnet_model"
-    [ "$current_opus_model" != "$new_opus_model" ] && echo "  Opus Model: $current_opus_model -> $new_opus_model"
-    [ "$current_subagent_model" != "$new_subagent_model" ] && echo "  Subagent Model: $current_subagent_model -> $new_subagent_model"
-    [ "$current_small_fast_model" != "$new_small_fast_model" ] && echo "  Small/Fast Model: $current_small_fast_model -> $new_small_fast_model"
+    [ "$provider_name" != "$new_provider_name" ] && echo -e "  ${CYAN}Provider Name:${RESET} $provider_name ${YELLOW}→${RESET} $new_provider_name"
+    [ "$current_base_url" != "$new_base_url" ] && echo -e "  ${CYAN}Base URL:${RESET} $current_base_url ${YELLOW}→${RESET} $new_base_url"
+    [ "$current_api_key" != "$new_api_key" ] && echo -e "  ${CYAN}API Key:${RESET} ${DIM}*** → ***${RESET}"
+    [ "$current_model_id" != "$new_model_id" ] && echo -e "  ${CYAN}Main Model:${RESET} $current_model_id ${YELLOW}→${RESET} $new_model_id"
+    [ "$current_haiku_model" != "$new_haiku_model" ] && echo -e "  ${CYAN}Haiku Model:${RESET} $current_haiku_model ${YELLOW}→${RESET} $new_haiku_model"
+    [ "$current_sonnet_model" != "$new_sonnet_model" ] && echo -e "  ${CYAN}Sonnet Model:${RESET} $current_sonnet_model ${YELLOW}→${RESET} $new_sonnet_model"
+    [ "$current_opus_model" != "$new_opus_model" ] && echo -e "  ${CYAN}Opus Model:${RESET} $current_opus_model ${YELLOW}→${RESET} $new_opus_model"
+    [ "$current_subagent_model" != "$new_subagent_model" ] && echo -e "  ${CYAN}Subagent Model:${RESET} $current_subagent_model ${YELLOW}→${RESET} $new_subagent_model"
+    [ "$current_small_fast_model" != "$new_small_fast_model" ] && echo -e "  ${CYAN}Small/Fast Model:${RESET} $current_small_fast_model ${YELLOW}→${RESET} $new_small_fast_model"
     echo
 
     # Confirm changes
@@ -985,7 +1024,7 @@ cmd_configure_custom_vars_interactive() {
 
         echo
         log_info "Preview:"
-        echo "  $var_name=\"$var_value\""
+        echo -e "  ${CYAN}$var_name${RESET}=\"$var_value\""
         echo
 
         if confirm_action "Add this variable?"; then
@@ -1010,14 +1049,14 @@ cmd_modify_custom_vars() {
 
     while true; do
         echo
-        echo "Custom Variables for '$provider_name':"
+        echo -e "${BOLD}Custom Variables for '${CYAN}$provider_name${RESET}${BOLD}':${RESET}"
         list_custom_vars "$config_file"
         echo
-        echo "Options:"
-        echo "  a. Add new variable"
-        echo "  b. Edit existing variable"
-        echo "  c. Delete variable"
-        echo "  d. Return to main menu"
+        echo -e "${BOLD}Options:${RESET}"
+        echo -e "  ${BOLD}a.${RESET} ${CYAN}Add new variable${RESET}"
+        echo -e "  ${BOLD}b.${RESET} ${CYAN}Edit existing variable${RESET}"
+        echo -e "  ${BOLD}c.${RESET} ${CYAN}Delete variable${RESET}"
+        echo -e "  ${BOLD}d.${RESET} ${CYAN}Return to main menu${RESET}"
         echo
 
         local choice
@@ -1048,7 +1087,7 @@ cmd_modify_custom_vars() {
 
                 echo
                 log_info "Preview:"
-                echo "  $new_var_name=\"$new_var_value\""
+                echo -e "  ${CYAN}$new_var_name${RESET}=\"$new_var_value\""
                 echo
 
                 if confirm_action "Add this variable?"; then
@@ -1083,7 +1122,7 @@ cmd_modify_custom_vars() {
 
                 echo
                 log_info "Preview:"
-                echo "  $edit_var_name=\"$new_edit_value\""
+                echo -e "  ${CYAN}$edit_var_name${RESET}=\"$new_edit_value\""
                 echo
 
                 if confirm_action "Update this variable?"; then
@@ -1123,8 +1162,21 @@ cmd_modify_custom_vars() {
 
 cmd_help() {
     cat << 'EOF'
-YACCS - Yet Another Claude Code Switcher
-Manage multiple Claude Code provider configurations
+╔════════════════════════════════════════════════════════════════╗
+║                                                                ║
+║   ██    ██   █████    ██████   ██████   ███████               ║
+║    ██  ██   ██   ██  ██       ██        ██                    ║
+║     ████    ███████  ██       ██        ███████               ║
+║      ██     ██   ██  ██       ██             ██               ║
+║      ██     ██   ██   ██████   ██████   ███████               ║
+║                                                                ║
+║          Yet Another Claude Code Switcher                     ║
+║      Manage multiple Claude Code provider configurations      ║
+║                                                                ║
+╚════════════════════════════════════════════════════════════════╝
+
+EOF
+    cat << 'EOF'
 
 USAGE:
   yaccs <command> [options]
