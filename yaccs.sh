@@ -1138,8 +1138,8 @@ COMMANDS:
                          Option 9: Manage custom environment variables
 
   <provider>             Switch to a provider and run Claude Code
-                         Example: yaccs glm
-                         Additional args are passed to claude
+                         All arguments after provider name are passed to claude
+                         Example: yaccs glm -r --model opus
 
   list                   List all configured providers
                          Shows active provider with [*]
@@ -1149,6 +1149,7 @@ COMMANDS:
 
   default                Reset to default Claude Code subscription
                          Unsets all provider environment variables
+                         Also accepts Claude arguments: yaccs default -r
 
   reset                  Alias for 'default'
 
@@ -1163,8 +1164,13 @@ EXAMPLES:
   # Switch to a provider
   yaccs glm
 
-  # Use provider with Claude Code arguments
-  yaccs chutes --help
+  # Pass arguments to Claude Code (resume session, select model, etc.)
+  yaccs chutes -r                    # Resume previous session
+  yaccs openrouter --resume          # Resume (long form)
+  yaccs glm -m opus                  # Use specific model tier
+  yaccs chutes --help                # Get Claude Code help
+  yaccs openrouter -r -m sonnet      # Combine multiple arguments
+  yaccs default -r                   # Resume with default provider
 
   # List all providers
   yaccs list

@@ -153,6 +153,39 @@ yaccs help
 
 Shows complete command reference.
 
+### Passing Arguments to Claude Code
+
+YACCS seamlessly passes any arguments after the provider name directly to Claude Code. This means you can use all Claude Code flags and options:
+
+```bash
+# Resume your previous Claude session
+yaccs chutes -r
+yaccs openrouter --resume
+
+# Use a specific model tier
+yaccs glm -m opus
+yaccs chutes --model sonnet
+
+# Get help for Claude Code
+yaccs chutes --help
+
+# Combine multiple arguments
+yaccs openrouter -r -m opus
+yaccs glm --resume --model sonnet
+
+# Works with default/reset too
+yaccs default -r
+yaccs reset --help
+```
+
+**All standard Claude Code flags and options are supported**, including:
+- `-r, --resume` - Resume your previous session
+- `-m, --model <tier>` - Specify model tier (haiku/sonnet/opus)
+- `--help` - Show Claude Code help
+- Any other Claude Code arguments
+
+The implementation uses `exec claude "$@"` which means arguments are passed through transparently.
+
 ## Configuration Structure
 
 YACCS stores configurations in `~/.yaccs/`:
