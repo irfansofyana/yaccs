@@ -2,6 +2,99 @@
 
 A CLI tool to seamlessly manage and switch between multiple Claude Code LLM provider configurations. Use different providers for different projects or needs without manual environment variable juggling.
 
+```bash
+__  _____   _________________
+\ \/ /   | / ____/ ____/ ___/
+ \  / /| |/ /   / /    \__ \
+ / / ___ / /___/ /___ ___/ /
+/_/_/  |_\____/\____//____/
+Yet Another Claude Code Switcher
+by irfansofyana
+
+
+USAGE:
+  yaccs <command> [options]
+
+COMMANDS:
+  configure <provider>    Configure a new or existing provider
+                         Prompts for: Base URL, API Key, Model ID(s)
+
+  modify <provider>       Modify an existing provider configuration
+                         Interactive menu to update specific fields
+                         Option 9: Manage custom environment variables
+
+  use <provider>          Set the default provider
+                         When 'yaccs' is run with no arguments, it will use this provider
+
+  <provider>             Switch to a provider and run Claude Code
+                         All arguments after provider name are passed to claude
+                         Example: yaccs glm -r --model opus
+
+  list                   List all configured providers
+                         Shows active provider with [*], default with [D]
+
+  status                 Show currently active provider
+                         Displays both standard and custom environment variables
+
+  remove <provider>      Remove a configured provider
+
+  help                   Show this help message
+
+EXAMPLES:
+  # Configure a new provider
+  yaccs configure openrouter
+
+  # Set default provider (for 'yaccs' with no args)
+  yaccs use glm
+
+  # Launch with default provider
+  yaccs
+
+  # Switch to a provider
+  yaccs glm
+
+  # Pass arguments to Claude Code (resume session, select model, etc.)
+  yaccs chutes -r                    # Resume previous session
+  yaccs openrouter --resume          # Resume (long form)
+  yaccs glm -m opus                  # Use specific model tier
+  yaccs chutes --help                # Get Claude Code help
+  yaccs openrouter -r -m sonnet      # Combine multiple arguments
+
+  # List all providers
+  yaccs list
+
+  # Check which provider is active
+  yaccs status
+
+  # Remove a provider
+  yaccs remove openrouter
+
+CONFIGURATION:
+  Providers are stored in: ~/.yaccs/providers/
+  Active provider tracking: ~/.yaccs/active
+  Default provider tracking: ~/.yaccs/default_provider
+  Each provider file contains environment variable exports
+
+CUSTOM VARIABLES:
+  Each provider can have custom environment variables for provider-specific settings:
+
+  Examples:
+    - DISABLE_PROMPT_CACHING=1 (for providers without caching support like Qwen)
+    - ENABLE_DEBUG=true (for testing/debugging)
+    - CUSTOM_TIMEOUT=30 (for performance tuning)
+
+  Add custom variables:
+    yaccs configure <provider>     # Prompted during setup
+    yaccs modify <provider>        # Select option 9 to manage
+
+NOTES:
+  - API Keys are stored in plaintext in ~/.yaccs/providers/
+  - Custom variables are also stored in plaintext (treat like API keys)
+  - Files are created with restrictive permissions (chmod 600)
+  - To use default Anthropic subscription, run 'claude' directly
+  - See https://code.claude.com/docs/en/settings#environment-variables for available variables
+```
+
 ## Features
 
 - ✨ **Multi-Provider Support** - Configure and switch between multiple LLM providers
