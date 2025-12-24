@@ -49,6 +49,28 @@ init_colors() {
 init_colors
 
 # ========================
+#      Banner Display
+# ========================
+
+# Show YACCS banner
+show_banner() {
+    echo -e "${CYAN}"
+    cat << 'EOF'
+__  _____   _________________
+\ \/ /   | / ____/ ____/ ___/
+ \  / /| |/ /   / /    \__ \
+ / / ___ / /___/ /___ ___/ /
+/_/_/  |_\____/\____//____/
+EOF
+    echo -e "${BOLD}Yet Another Claude Code Switcher${RESET}"
+    echo -e "${CYAN}by irfansofyana${RESET}"
+    echo ""
+}
+
+# Show banner at startup
+show_banner
+
+# ========================
 #      Utility Functions
 # ========================
 
