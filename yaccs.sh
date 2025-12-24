@@ -15,6 +15,7 @@ SCRIPT_NAME="yaccs"
 YACCS_DIR="${HOME}/.yaccs"
 PROVIDERS_DIR="${YACCS_DIR}/providers"
 ACTIVE_FILE="${YACCS_DIR}/active"
+DEFAULT_PROVIDER_FILE="${YACCS_DIR}/default_provider"
 
 # ========================
 #      Color System
@@ -47,6 +48,28 @@ init_colors() {
 
 # Initialize colors at startup
 init_colors
+
+# ========================
+#      Banner Display
+# ========================
+
+# Show YACCS banner
+show_banner() {
+    echo -e "${CYAN}"
+    cat << 'EOF'
+__  _____   _________________
+\ \/ /   | / ____/ ____/ ___/
+ \  / /| |/ /   / /    \__ \
+ / / ___ / /___/ /___ ___/ /
+/_/_/  |_\____/\____//____/
+EOF
+    echo -e "${BOLD}Yet Another Claude Code Switcher${RESET}"
+    echo -e "${CYAN}by irfansofyana${RESET}"
+    echo ""
+}
+
+# Show banner at startup
+show_banner
 
 # ========================
 #      Utility Functions
@@ -465,6 +488,42 @@ cmd_switch_provider() {
 }
 
 # ========================
+#       Use Command
+# ========================
+
+cmd_use() {
+    local provider="${1:-}"
+
+    if [ -z "$provider" ]; then
+        log_error "Usage: $SCRIPT_NAME use <provider>"
+        echo ""
+        echo "Sets the default provider to use when '$SCRIPT_NAME' is run with no arguments."
+        echo ""
+        echo "Available providers:"
+        cmd_list_providers 2>/dev/null || echo "  (none configured yet)"
+        exit 1
+    fi
+
+    ensure_dirs_exist
+
+    local config_file="${PROVIDERS_DIR}/${provider}.sh"
+
+    if [ ! -f "$config_file" ]; then
+        log_error "Provider '$provider' not configured"
+        log_error "Available providers:"
+        cmd_list_providers 2>/dev/null || echo "  (none configured yet)"
+        exit 1
+    fi
+
+    # Write to default provider file
+    echo "$provider" > "$DEFAULT_PROVIDER_FILE"
+    chmod 600 "$DEFAULT_PROVIDER_FILE"
+
+    log_success "Default provider set to: ${CYAN}${provider}${RESET}"
+    log_info "Run '${SCRIPT_NAME}' to launch Claude with this provider"
+}
+
+# ========================
 #      List Command
 # ========================
 
@@ -474,6 +533,11 @@ cmd_list_providers() {
     local active_provider=""
     if [ -f "$ACTIVE_FILE" ]; then
         active_provider=$(cat "$ACTIVE_FILE")
+    fi
+
+    local default_provider=""
+    if [ -f "$DEFAULT_PROVIDER_FILE" ]; then
+        default_provider=$(cat "$DEFAULT_PROVIDER_FILE")
     fi
 
     local providers=()
@@ -503,6 +567,8 @@ cmd_list_providers() {
 
         if [ "$provider" = "$active_provider" ]; then
             printf "  ${GREEN}${BOLD}[*]${RESET} ${CYAN}%-15s${RESET} %s (model: %s)\n" "$provider" "$base_url" "$model"
+        elif [ "$provider" = "$default_provider" ]; then
+            printf "  ${YELLOW}${BOLD}[D]${RESET} ${CYAN}%-15s${RESET} %s (model: %s)\n" "$provider" "$base_url" "$model"
         else
             printf "  ${DIM}[ ]${RESET} ${CYAN}%-15s${RESET} %s (model: %s)\n" "$provider" "$base_url" "$model"
         fi
@@ -546,18 +612,6 @@ cmd_status() {
         echo -e "${BOLD}Custom Environment Variables:${RESET}"
         list_custom_vars "$config_file"
     fi
-}
-
-# ========================
-#   Default/Reset Command
-# ========================
-
-cmd_default() {
-    unset_anthropic_vars
-    rm -f "$ACTIVE_FILE" 2>/dev/null || true
-    log_success "Reset to default Claude Code subscription"
-    shift
-    exec claude "$@"
 }
 
 # ========================
@@ -1162,21 +1216,6 @@ cmd_modify_custom_vars() {
 
 cmd_help() {
     cat << 'EOF'
-╔════════════════════════════════════════════════════════════════╗
-║                                                                ║
-║   ██    ██   █████    ██████   ██████   ███████               ║
-║    ██  ██   ██   ██  ██       ██        ██                    ║
-║     ████    ███████  ██       ██        ███████               ║
-║      ██     ██   ██  ██       ██             ██               ║
-║      ██     ██   ██   ██████   ██████   ███████               ║
-║                                                                ║
-║          Yet Another Claude Code Switcher                     ║
-║      Manage multiple Claude Code provider configurations      ║
-║                                                                ║
-╚════════════════════════════════════════════════════════════════╝
-
-EOF
-    cat << 'EOF'
 
 USAGE:
   yaccs <command> [options]
@@ -1189,21 +1228,18 @@ COMMANDS:
                          Interactive menu to update specific fields
                          Option 9: Manage custom environment variables
 
+  use <provider>          Set the default provider
+                         When 'yaccs' is run with no arguments, it will use this provider
+
   <provider>             Switch to a provider and run Claude Code
                          All arguments after provider name are passed to claude
                          Example: yaccs glm -r --model opus
 
   list                   List all configured providers
-                         Shows active provider with [*]
+                         Shows active provider with [*], default with [D]
 
   status                 Show currently active provider
                          Displays both standard and custom environment variables
-
-  default                Reset to default Claude Code subscription
-                         Unsets all provider environment variables
-                         Also accepts Claude arguments: yaccs default -r
-
-  reset                  Alias for 'default'
 
   remove <provider>      Remove a configured provider
 
@@ -1212,6 +1248,12 @@ COMMANDS:
 EXAMPLES:
   # Configure a new provider
   yaccs configure openrouter
+
+  # Set default provider (for 'yaccs' with no args)
+  yaccs use glm
+
+  # Launch with default provider
+  yaccs
 
   # Switch to a provider
   yaccs glm
@@ -1222,7 +1264,6 @@ EXAMPLES:
   yaccs glm -m opus                  # Use specific model tier
   yaccs chutes --help                # Get Claude Code help
   yaccs openrouter -r -m sonnet      # Combine multiple arguments
-  yaccs default -r                   # Resume with default provider
 
   # List all providers
   yaccs list
@@ -1230,15 +1271,13 @@ EXAMPLES:
   # Check which provider is active
   yaccs status
 
-  # Switch back to default Claude subscription
-  yaccs default
-
   # Remove a provider
   yaccs remove openrouter
 
 CONFIGURATION:
   Providers are stored in: ~/.yaccs/providers/
   Active provider tracking: ~/.yaccs/active
+  Default provider tracking: ~/.yaccs/default_provider
   Each provider file contains environment variable exports
 
 CUSTOM VARIABLES:
@@ -1257,7 +1296,7 @@ NOTES:
   - API Keys are stored in plaintext in ~/.yaccs/providers/
   - Custom variables are also stored in plaintext (treat like API keys)
   - Files are created with restrictive permissions (chmod 600)
-  - Use 'yaccs default' before sharing your system
+  - To use default Anthropic subscription, run 'claude' directly
   - See https://code.claude.com/docs/en/settings#environment-variables for available variables
 EOF
 }
@@ -1267,7 +1306,25 @@ EOF
 # ========================
 
 main() {
-    local command="${1:-help}"
+    local command="${1:-}"
+
+    # No argument provided - check for default provider
+    if [ -z "$command" ]; then
+        if [ -f "$DEFAULT_PROVIDER_FILE" ]; then
+            local default_provider
+            default_provider=$(cat "$DEFAULT_PROVIDER_FILE")
+            # Switch to default provider and launch claude
+            cmd_switch_provider "$default_provider"
+        else
+            # No default set - list available providers
+            log_info "No default provider set."
+            echo ""
+            cmd_list_providers
+            echo ""
+            log_info "Use '$SCRIPT_NAME use <provider>' to set a default provider"
+        fi
+        return
+    fi
 
     case "$command" in
         configure)
@@ -1276,14 +1333,14 @@ main() {
         modify)
             cmd_modify "$2"
             ;;
+        use)
+            cmd_use "${2:-}"
+            ;;
         list)
             cmd_list_providers
             ;;
         status)
             cmd_status
-            ;;
-        default|reset)
-            cmd_default "${@:2}"
             ;;
         remove)
             cmd_remove "$2"
