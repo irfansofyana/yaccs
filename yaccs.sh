@@ -1049,13 +1049,6 @@ validate_custom_var_name() {
         return 1
     fi
 
-    # Check for reserved names
-    case "$name" in
-        ANTHROPIC_*|CLAUDE_CODE_*)
-            return 1
-            ;;
-    esac
-
     return 0
 }
 
@@ -1138,6 +1131,9 @@ cmd_configure_custom_vars_interactive() {
         fi
 
         echo >&2
+        echo -e "${CYAN}Reference:${RESET} See Claude Code environment variables documentation:" >&2
+        echo "  https://code.claude.com/docs/en/settings#environment-variables" >&2
+        echo >&2
         local var_name
         var_name=$(prompt_input "Variable name: ")
         if [ -z "$var_name" ]; then
@@ -1147,7 +1143,6 @@ cmd_configure_custom_vars_interactive() {
 
         if ! validate_custom_var_name "$var_name"; then
             log_error "Invalid variable name. Must be alphanumeric + underscore, cannot start with number"
-            echo "Reserved prefixes: ANTHROPIC_*, CLAUDE_CODE_*" >&2
             continue
         fi
 
@@ -1235,6 +1230,10 @@ cmd_modify_custom_vars() {
 
         case "$choice" in
             a)
+                echo >&2
+                echo -e "${CYAN}Reference:${RESET} See Claude Code environment variables documentation:" >&2
+                echo "  https://code.claude.com/docs/en/settings#environment-variables" >&2
+                echo >&2
                 echo
                 local new_var_name
                 new_var_name=$(prompt_input "Variable name: ")
@@ -1245,7 +1244,6 @@ cmd_modify_custom_vars() {
 
                 if ! validate_custom_var_name "$new_var_name"; then
                     log_error "Invalid variable name. Must be alphanumeric + underscore, cannot start with number"
-                    echo "Reserved prefixes: ANTHROPIC_*, CLAUDE_CODE_*"
                     continue
                 fi
 
@@ -1361,60 +1359,6 @@ COMMANDS:
   remove <provider>      Remove a configured provider
 
   help                   Show this help message
-
-EXAMPLES:
-  # Configure a new provider
-  yaccs configure openrouter
-
-  # Set default provider (for 'yaccs' with no args)
-  yaccs use glm
-
-  # Launch with default provider
-  yaccs
-
-  # Switch to a provider
-  yaccs glm
-
-  # Pass arguments to Claude Code (resume session, select model, etc.)
-  yaccs chutes -r                    # Resume previous session
-  yaccs openrouter --resume          # Resume (long form)
-  yaccs glm -m opus                  # Use specific model tier
-  yaccs chutes --help                # Get Claude Code help
-  yaccs openrouter -r -m sonnet      # Combine multiple arguments
-
-  # List all providers
-  yaccs list
-
-  # Check which provider is active
-  yaccs status
-
-  # Remove a provider
-  yaccs remove openrouter
-
-CONFIGURATION:
-  Providers are stored in: ~/.yaccs/providers/
-  Active provider tracking: ~/.yaccs/active
-  Default provider tracking: ~/.yaccs/default_provider
-  Each provider file contains environment variable exports
-
-CUSTOM VARIABLES:
-  Each provider can have custom environment variables for provider-specific settings:
-
-  Examples:
-    - DISABLE_PROMPT_CACHING=1 (for providers without caching support like Qwen)
-    - ENABLE_DEBUG=true (for testing/debugging)
-    - CUSTOM_TIMEOUT=30 (for performance tuning)
-
-  Add custom variables:
-    yaccs configure <provider>     # Prompted during setup
-    yaccs modify <provider>        # Select option 9 to manage
-
-NOTES:
-  - API Keys are stored in plaintext in ~/.yaccs/providers/
-  - Custom variables are also stored in plaintext (treat like API keys)
-  - Files are created with restrictive permissions (chmod 600)
-  - To use default Anthropic subscription, run 'claude' directly
-  - See https://code.claude.com/docs/en/settings#environment-variables for available variables
 EOF
 }
 
