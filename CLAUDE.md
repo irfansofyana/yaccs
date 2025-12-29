@@ -111,7 +111,7 @@ export CUSTOM_TIMEOUT="30"
 - `list_custom_vars()` - Display formatted list of custom variables with indices
 
 **Management Functions:**
-- `validate_custom_var_name()` - Validate var names (must be shell identifiers, prevent ANTHROPIC_* and CLAUDE_CODE_* prefixes)
+- `validate_custom_var_name()` - Validate var names (must be shell identifiers)
 - `add_custom_var()` - Add new custom variable to config file
 - `edit_custom_var()` - Update existing custom variable value
 - `delete_custom_var()` - Remove custom variable from config file
@@ -131,7 +131,6 @@ export CUSTOM_TIMEOUT="30"
 
 ### Validation Rules
 - Variable names must match regex: `[a-zA-Z_][a-zA-Z0-9_]*` (valid shell identifier)
-- Cannot shadow standard vars (reserved prefixes: `ANTHROPIC_*`, `CLAUDE_CODE_*`)
 - Empty values are not allowed
 - Special characters in values are automatically escaped in config files
 

@@ -194,6 +194,29 @@ list_custom_vars() {
     done <<< "$custom_vars"
 }
 
+# List all managed variables including system-managed CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
+list_managed_vars() {
+    local config_file="$1"
+
+    # Show system-managed variable first
+    local current_value=$(get_config_value "$config_file" "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" || echo "1")
+    echo -e "  ${DIM}[S]${RESET} ${CYAN}CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC${RESET} = \"$current_value\" ${DIM}(system-managed)${RESET}"
+
+    # Show custom variables
+    local custom_vars
+    custom_vars=$(get_custom_vars_from_config "$config_file")
+
+    if [ -z "$custom_vars" ]; then
+        echo -e "  ${DIM}(no custom variables)${RESET}"
+    else
+        local index=1
+        while IFS='=' read -r key value; do
+            echo -e "  ${DIM}[$index]${RESET} ${CYAN}$key${RESET} = \"$value\""
+            ((index++))
+        done <<< "$custom_vars"
+    fi
+}
+
 # Redact API key for display (show first and last N characters)
 redact_key() {
     local key="$1"
@@ -213,6 +236,7 @@ write_config_file() {
     local subagent_model="$8"
     local small_fast_model="$9"
     local custom_vars_string="${10:-}"
+    local disable_traffic="${11:-1}"
 
     cat > "$config_file" << 'EOFCONFIG'
 #!/bin/bash
@@ -230,7 +254,7 @@ export ANTHROPIC_DEFAULT_SONNET_MODEL="${sonnet_model}"
 export ANTHROPIC_DEFAULT_OPUS_MODEL="${opus_model}"
 export CLAUDE_CODE_SUBAGENT_MODEL="${subagent_model}"
 export ANTHROPIC_SMALL_FAST_MODEL="${small_fast_model}"
-export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="${disable_traffic}"
 EOF
 
     # Write custom variables section if provided
@@ -395,6 +419,17 @@ cmd_configure() {
         [ -n "$smallfast_input" ] && small_fast_model="$smallfast_input"
     fi
 
+    # Ask about system-managed variable: CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
+    local disable_traffic="1"  # Default value
+    local current_disable_traffic=""
+
+    if [ "$keep_existing" = true ] && [ -f "$config_file" ]; then
+        current_disable_traffic=$(get_config_value "$config_file" "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
+        disable_traffic="${current_disable_traffic:-1}"
+    fi
+
+    disable_traffic=$(prompt_disable_traffic "$disable_traffic")
+
     # Ask about custom variables
     echo
     local custom_vars=""
@@ -413,11 +448,13 @@ cmd_configure() {
     echo -e "  ${CYAN}Opus Model:${RESET} $opus_model"
     echo -e "  ${CYAN}Subagent Model:${RESET} $subagent_model"
     echo -e "  ${CYAN}Small/Fast Model:${RESET} $small_fast_model"
+    echo -e "  ${CYAN}CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:${RESET} $disable_traffic"
     if [ -n "$custom_vars" ]; then
         echo -e "  ${CYAN}Custom Variables:${RESET}"
         echo "$custom_vars" | while IFS='=' read -r key value; do
             if [ -n "$key" ]; then
-                echo -e "    ${CYAN}$key${RESET}=\"$value\""
+                # Show without extra quotes - just key=value
+                echo -e "    ${CYAN}$key${RESET}=$value"
             fi
         done
     fi
@@ -431,7 +468,8 @@ cmd_configure() {
     # Write configuration file
     write_config_file "$config_file" "$api_key" "$base_url" "$model_id" \
                       "$haiku_model" "$sonnet_model" "$opus_model" \
-                      "$subagent_model" "$small_fast_model" "$custom_vars"
+                      "$subagent_model" "$small_fast_model" "$custom_vars" \
+                      "$disable_traffic"
 
     log_success "Provider '$provider_name' configured successfully"
     echo "Config file: $config_file"
@@ -645,6 +683,14 @@ cmd_modify() {
     local current_opus_model=$(get_config_value "$config_file" "ANTHROPIC_DEFAULT_OPUS_MODEL" || echo "$current_model_id")
     local current_subagent_model=$(get_config_value "$config_file" "CLAUDE_CODE_SUBAGENT_MODEL" || echo "$current_model_id")
     local current_small_fast_model=$(get_config_value "$config_file" "ANTHROPIC_SMALL_FAST_MODEL" || echo "$current_model_id")
+    local current_disable_traffic=$(get_config_value "$config_file" "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" || echo "1")
+
+    # Count custom variables
+    local custom_vars_count=0
+    local custom_vars_list=$(get_custom_vars_from_config "$config_file")
+    if [ -n "$custom_vars_list" ]; then
+        custom_vars_count=$(echo "$custom_vars_list" | grep -c '=' || true)
+    fi
 
     # Display current configuration in a user-friendly format
     echo -e "${BOLD}Current configuration for '${CYAN}$provider_name${RESET}${BOLD}':${RESET}"
@@ -657,7 +703,8 @@ cmd_modify() {
     echo -e "  ${BOLD}6.${RESET} ${CYAN}Opus Model:${RESET} $current_opus_model"
     echo -e "  ${BOLD}7.${RESET} ${CYAN}Subagent Model:${RESET} $current_subagent_model"
     echo -e "  ${BOLD}8.${RESET} ${CYAN}Small/Fast Model:${RESET} $current_small_fast_model"
-    echo -e "  ${BOLD}9.${RESET} ${CYAN}Manage Custom Variables${RESET}"
+    echo -e "  ${BOLD}T.${RESET} ${CYAN}Disable Non-Essential Traffic:${RESET} $current_disable_traffic ${DIM}(0=enable, 1=disable)${RESET}"
+    echo -e "  ${BOLD}9.${RESET} ${CYAN}Manage Custom Variables${RESET} ${DIM}($custom_vars_count defined)${RESET}"
     echo
 
     # Menu-driven interface for selecting fields to modify
@@ -675,10 +722,24 @@ cmd_modify() {
                     echo "Field $selection already selected"
                 fi
                 ;;
+            T|t)
+                if [[ ! " ${fields_to_modify[@]:-} " =~ " T " ]]; then
+                    fields_to_modify+=("T")
+                    echo "Added field T (Disable Non-Essential Traffic) to modification list"
+                else
+                    echo "Field T already selected"
+                fi
+                ;;
             9)
                 # Launch custom variables submenu
                 cmd_modify_custom_vars "$provider_name" "$config_file"
                 echo
+                # Recalculate custom vars count after submenu returns
+                custom_vars_count=0
+                custom_vars_list=$(get_custom_vars_from_config "$config_file")
+                if [ -n "$custom_vars_list" ]; then
+                    custom_vars_count=$(echo "$custom_vars_list" | grep -c '=' || true)
+                fi
                 # Show menu again after returning from submenu
                 echo "Current configuration for '$provider_name':"
                 echo "  0. Provider Name: $provider_name"
@@ -690,14 +751,15 @@ cmd_modify() {
                 echo "  6. Opus Model: $current_opus_model"
                 echo "  7. Subagent Model: $current_subagent_model"
                 echo "  8. Small/Fast Model: $current_small_fast_model"
-                echo "  9. Manage Custom Variables"
+                echo "  T. Disable Non-Essential Traffic: $current_disable_traffic (0=enable, 1=disable)"
+                echo "  9. Manage Custom Variables ($custom_vars_count defined)"
                 echo
                 ;;
             done|DONE)
                 break
                 ;;
             *)
-                echo "Invalid selection. Please enter a number (0-9) or 'done'."
+                echo "Invalid selection. Please enter a number (0-9), T, or 'done'."
                 ;;
         esac
     done
@@ -718,6 +780,7 @@ cmd_modify() {
     local new_opus_model="$current_opus_model"
     local new_subagent_model="$current_subagent_model"
     local new_small_fast_model="$current_small_fast_model"
+    local new_disable_traffic="$current_disable_traffic"
 
     # Process each selected field
     for field in "${fields_to_modify[@]}"; do
@@ -836,6 +899,22 @@ cmd_modify() {
                     new_small_fast_model="$input"
                 fi
                 ;;
+            T)
+                echo "Enter new Disable Non-Essential Traffic value (current: $current_disable_traffic):"
+                if [ -t 0 ]; then
+                    read -p "> " input </dev/tty
+                else
+                    read -p "> " input
+                fi
+                if [ -n "$input" ]; then
+                    if [[ "$input" =~ ^[01]$ ]]; then
+                        new_disable_traffic="$input"
+                    else
+                        log_error "Invalid value. Must be 0 or 1"
+                        echo "Keeping current value: $current_disable_traffic"
+                    fi
+                fi
+                ;;
         esac
     done
 
@@ -873,6 +952,7 @@ cmd_modify() {
     [ "$current_opus_model" != "$new_opus_model" ] && echo -e "  ${CYAN}Opus Model:${RESET} $current_opus_model ${YELLOW}→${RESET} $new_opus_model"
     [ "$current_subagent_model" != "$new_subagent_model" ] && echo -e "  ${CYAN}Subagent Model:${RESET} $current_subagent_model ${YELLOW}→${RESET} $new_subagent_model"
     [ "$current_small_fast_model" != "$new_small_fast_model" ] && echo -e "  ${CYAN}Small/Fast Model:${RESET} $current_small_fast_model ${YELLOW}→${RESET} $new_small_fast_model"
+    [ "$current_disable_traffic" != "$new_disable_traffic" ] && echo -e "  ${CYAN}Disable Non-Essential Traffic:${RESET} CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=$current_disable_traffic ${YELLOW}→${RESET} $new_disable_traffic"
     echo
 
     # Confirm changes
@@ -910,7 +990,8 @@ cmd_modify() {
     # Write configuration file
     write_config_file "$config_file" "$new_api_key" "$new_base_url" "$new_model_id" \
                       "$new_haiku_model" "$new_sonnet_model" "$new_opus_model" \
-                      "$new_subagent_model" "$new_small_fast_model" "$existing_custom_vars"
+                      "$new_subagent_model" "$new_small_fast_model" "$existing_custom_vars" \
+                      "$new_disable_traffic"
     
     if [ "$provider_name" != "$new_provider_name" ]; then
         log_success "Provider '$provider_name' renamed to '$new_provider_name' and modified successfully"
@@ -967,13 +1048,6 @@ validate_custom_var_name() {
     if ! [[ "$name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
         return 1
     fi
-
-    # Check for reserved names
-    case "$name" in
-        ANTHROPIC_*|CLAUDE_CODE_*)
-            return 1
-            ;;
-    esac
 
     return 0
 }
@@ -1050,36 +1124,40 @@ cmd_configure_custom_vars_interactive() {
     local custom_vars_string=""
 
     while true; do
-        echo "Add custom variable? (y/n):"
+        # Redirect all user-facing output to stderr
+        echo "Add custom variable? (y/n):" >&2
         if ! confirm_action ""; then
             break
         fi
 
-        echo
+        echo >&2
+        echo -e "${CYAN}Reference:${RESET} See Claude Code environment variables documentation:" >&2
+        echo "  https://code.claude.com/docs/en/settings#environment-variables" >&2
+        echo >&2
         local var_name
         var_name=$(prompt_input "Variable name: ")
         if [ -z "$var_name" ]; then
-            echo "Skipping - variable name cannot be empty"
+            echo "Skipping - variable name cannot be empty" >&2
             continue
         fi
 
         if ! validate_custom_var_name "$var_name"; then
             log_error "Invalid variable name. Must be alphanumeric + underscore, cannot start with number"
-            echo "Reserved prefixes: ANTHROPIC_*, CLAUDE_CODE_*"
             continue
         fi
 
         local var_value
         var_value=$(prompt_input "Variable value: ")
         if [ -z "$var_value" ]; then
-            echo "Skipping - variable value cannot be empty"
+            echo "Skipping - variable value cannot be empty" >&2
             continue
         fi
 
-        echo
-        log_info "Preview:"
-        echo -e "  ${CYAN}$var_name${RESET}=\"$var_value\""
-        echo
+        echo >&2
+        log_info "Preview:" >&2
+        # Show without extra quotes - just name=value
+        echo -e "  ${CYAN}${var_name}${RESET}=${var_value}" >&2
+        echo >&2
 
         if confirm_action "Add this variable?"; then
             if [ -z "$custom_vars_string" ]; then
@@ -1088,12 +1166,46 @@ cmd_configure_custom_vars_interactive() {
                 custom_vars_string="${custom_vars_string}
 ${var_name}=${var_value}"
             fi
-            log_success "Variable '$var_name' added"
+            log_success "Variable '$var_name' added" >&2
         fi
-        echo
+        echo >&2
     done
 
+    # Only this goes to stdout (the return value)
     echo "$custom_vars_string"
+}
+
+# Prompt user for CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC override
+prompt_disable_traffic() {
+    local current_value="${1:-1}"  # Default to 1 if not specified
+
+    # Redirect all user-facing output to stderr (matching cmd_configure_custom_vars_interactive pattern)
+    echo >&2
+    echo -e "${CYAN}System-Managed Variable: CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC${RESET}" >&2
+    echo "  Controls whether Claude Code disables non-essential network traffic" >&2
+    echo -e "  • ${GREEN}1${RESET} = Disable non-essential traffic (default, recommended)" >&2
+    echo -e "  • ${YELLOW}0${RESET} = Enable all traffic (use if provider requires it)" >&2
+    echo >&2
+    echo -e "  Current value: ${BOLD}$current_value${RESET}" >&2
+    echo >&2
+
+    if confirm_action "Override CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC?"; then
+        while true; do
+            local new_value
+            new_value=$(prompt_input "Enter new value (0 or 1): ")
+
+            if [[ "$new_value" =~ ^[01]$ ]]; then
+                # Only this goes to stdout (the return value)
+                echo "$new_value"
+                return 0
+            else
+                log_error "Invalid value. Please enter 0 or 1" >&2
+            fi
+        done
+    else
+        # Only this goes to stdout (the return value)
+        echo "$current_value"
+    fi
 }
 
 # Interactive submenu for managing custom variables
@@ -1103,8 +1215,8 @@ cmd_modify_custom_vars() {
 
     while true; do
         echo
-        echo -e "${BOLD}Custom Variables for '${CYAN}$provider_name${RESET}${BOLD}':${RESET}"
-        list_custom_vars "$config_file"
+        echo -e "${BOLD}Managed Variables for '${CYAN}$provider_name${RESET}${BOLD}':${RESET}"
+        list_managed_vars "$config_file"
         echo
         echo -e "${BOLD}Options:${RESET}"
         echo -e "  ${BOLD}a.${RESET} ${CYAN}Add new variable${RESET}"
@@ -1118,6 +1230,10 @@ cmd_modify_custom_vars() {
 
         case "$choice" in
             a)
+                echo >&2
+                echo -e "${CYAN}Reference:${RESET} See Claude Code environment variables documentation:" >&2
+                echo "  https://code.claude.com/docs/en/settings#environment-variables" >&2
+                echo >&2
                 echo
                 local new_var_name
                 new_var_name=$(prompt_input "Variable name: ")
@@ -1128,7 +1244,6 @@ cmd_modify_custom_vars() {
 
                 if ! validate_custom_var_name "$new_var_name"; then
                     log_error "Invalid variable name. Must be alphanumeric + underscore, cannot start with number"
-                    echo "Reserved prefixes: ANTHROPIC_*, CLAUDE_CODE_*"
                     continue
                 fi
 
@@ -1244,60 +1359,6 @@ COMMANDS:
   remove <provider>      Remove a configured provider
 
   help                   Show this help message
-
-EXAMPLES:
-  # Configure a new provider
-  yaccs configure openrouter
-
-  # Set default provider (for 'yaccs' with no args)
-  yaccs use glm
-
-  # Launch with default provider
-  yaccs
-
-  # Switch to a provider
-  yaccs glm
-
-  # Pass arguments to Claude Code (resume session, select model, etc.)
-  yaccs chutes -r                    # Resume previous session
-  yaccs openrouter --resume          # Resume (long form)
-  yaccs glm -m opus                  # Use specific model tier
-  yaccs chutes --help                # Get Claude Code help
-  yaccs openrouter -r -m sonnet      # Combine multiple arguments
-
-  # List all providers
-  yaccs list
-
-  # Check which provider is active
-  yaccs status
-
-  # Remove a provider
-  yaccs remove openrouter
-
-CONFIGURATION:
-  Providers are stored in: ~/.yaccs/providers/
-  Active provider tracking: ~/.yaccs/active
-  Default provider tracking: ~/.yaccs/default_provider
-  Each provider file contains environment variable exports
-
-CUSTOM VARIABLES:
-  Each provider can have custom environment variables for provider-specific settings:
-
-  Examples:
-    - DISABLE_PROMPT_CACHING=1 (for providers without caching support like Qwen)
-    - ENABLE_DEBUG=true (for testing/debugging)
-    - CUSTOM_TIMEOUT=30 (for performance tuning)
-
-  Add custom variables:
-    yaccs configure <provider>     # Prompted during setup
-    yaccs modify <provider>        # Select option 9 to manage
-
-NOTES:
-  - API Keys are stored in plaintext in ~/.yaccs/providers/
-  - Custom variables are also stored in plaintext (treat like API keys)
-  - Files are created with restrictive permissions (chmod 600)
-  - To use default Anthropic subscription, run 'claude' directly
-  - See https://code.claude.com/docs/en/settings#environment-variables for available variables
 EOF
 }
 
