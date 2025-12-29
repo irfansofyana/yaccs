@@ -440,7 +440,8 @@ cmd_configure() {
         echo -e "  ${CYAN}Custom Variables:${RESET}"
         echo "$custom_vars" | while IFS='=' read -r key value; do
             if [ -n "$key" ]; then
-                echo -e "    ${CYAN}$key${RESET}=\"$value\""
+                # Show without extra quotes - just key=value
+                echo -e "    ${CYAN}$key${RESET}=$value"
             fi
         done
     fi
@@ -1086,36 +1087,38 @@ cmd_configure_custom_vars_interactive() {
     local custom_vars_string=""
 
     while true; do
-        echo "Add custom variable? (y/n):"
+        # Redirect all user-facing output to stderr
+        echo "Add custom variable? (y/n):" >&2
         if ! confirm_action ""; then
             break
         fi
 
-        echo
+        echo >&2
         local var_name
         var_name=$(prompt_input "Variable name: ")
         if [ -z "$var_name" ]; then
-            echo "Skipping - variable name cannot be empty"
+            echo "Skipping - variable name cannot be empty" >&2
             continue
         fi
 
         if ! validate_custom_var_name "$var_name"; then
             log_error "Invalid variable name. Must be alphanumeric + underscore, cannot start with number"
-            echo "Reserved prefixes: ANTHROPIC_*, CLAUDE_CODE_*"
+            echo "Reserved prefixes: ANTHROPIC_*, CLAUDE_CODE_*" >&2
             continue
         fi
 
         local var_value
         var_value=$(prompt_input "Variable value: ")
         if [ -z "$var_value" ]; then
-            echo "Skipping - variable value cannot be empty"
+            echo "Skipping - variable value cannot be empty" >&2
             continue
         fi
 
-        echo
-        log_info "Preview:"
-        echo -e "  ${CYAN}$var_name${RESET}=\"$var_value\""
-        echo
+        echo >&2
+        log_info "Preview:" >&2
+        # Show without extra quotes - just name=value
+        echo -e "  ${CYAN}${var_name}${RESET}=${var_value}" >&2
+        echo >&2
 
         if confirm_action "Add this variable?"; then
             if [ -z "$custom_vars_string" ]; then
@@ -1124,11 +1127,12 @@ cmd_configure_custom_vars_interactive() {
                 custom_vars_string="${custom_vars_string}
 ${var_name}=${var_value}"
             fi
-            log_success "Variable '$var_name' added"
+            log_success "Variable '$var_name' added" >&2
         fi
-        echo
+        echo >&2
     done
 
+    # Only this goes to stdout (the return value)
     echo "$custom_vars_string"
 }
 
