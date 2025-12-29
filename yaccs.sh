@@ -194,6 +194,28 @@ list_custom_vars() {
     done <<< "$custom_vars"
 }
 
+# List all managed variables including system-managed CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
+list_managed_vars() {
+    local config_file="$1"
+
+    # Show system-managed variable first
+    echo -e "  ${DIM}[S]${RESET} ${CYAN}CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC${RESET} = \"1\" ${DIM}(system-managed)${RESET}"
+
+    # Show custom variables
+    local custom_vars
+    custom_vars=$(get_custom_vars_from_config "$config_file")
+
+    if [ -z "$custom_vars" ]; then
+        echo -e "  ${DIM}(no custom variables)${RESET}"
+    else
+        local index=1
+        while IFS='=' read -r key value; do
+            echo -e "  ${DIM}[$index]${RESET} ${CYAN}$key${RESET} = \"$value\""
+            ((index++))
+        done <<< "$custom_vars"
+    fi
+}
+
 # Redact API key for display (show first and last N characters)
 redact_key() {
     local key="$1"
@@ -413,6 +435,7 @@ cmd_configure() {
     echo -e "  ${CYAN}Opus Model:${RESET} $opus_model"
     echo -e "  ${CYAN}Subagent Model:${RESET} $subagent_model"
     echo -e "  ${CYAN}Small/Fast Model:${RESET} $small_fast_model"
+    echo -e "  ${CYAN}Disable Non-Essential Traffic:${RESET} CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1"
     if [ -n "$custom_vars" ]; then
         echo -e "  ${CYAN}Custom Variables:${RESET}"
         echo "$custom_vars" | while IFS='=' read -r key value; do
@@ -646,6 +669,13 @@ cmd_modify() {
     local current_subagent_model=$(get_config_value "$config_file" "CLAUDE_CODE_SUBAGENT_MODEL" || echo "$current_model_id")
     local current_small_fast_model=$(get_config_value "$config_file" "ANTHROPIC_SMALL_FAST_MODEL" || echo "$current_model_id")
 
+    # Count custom variables
+    local custom_vars_count=0
+    local custom_vars_list=$(get_custom_vars_from_config "$config_file")
+    if [ -n "$custom_vars_list" ]; then
+        custom_vars_count=$(echo "$custom_vars_list" | grep -c '=' || true)
+    fi
+
     # Display current configuration in a user-friendly format
     echo -e "${BOLD}Current configuration for '${CYAN}$provider_name${RESET}${BOLD}':${RESET}"
     echo -e "  ${BOLD}0.${RESET} ${CYAN}Provider Name:${RESET} $provider_name"
@@ -657,7 +687,7 @@ cmd_modify() {
     echo -e "  ${BOLD}6.${RESET} ${CYAN}Opus Model:${RESET} $current_opus_model"
     echo -e "  ${BOLD}7.${RESET} ${CYAN}Subagent Model:${RESET} $current_subagent_model"
     echo -e "  ${BOLD}8.${RESET} ${CYAN}Small/Fast Model:${RESET} $current_small_fast_model"
-    echo -e "  ${BOLD}9.${RESET} ${CYAN}Manage Custom Variables${RESET}"
+    echo -e "  ${BOLD}9.${RESET} ${CYAN}Manage Custom Variables${RESET} ${DIM}($custom_vars_count defined)${RESET}"
     echo
 
     # Menu-driven interface for selecting fields to modify
@@ -679,6 +709,12 @@ cmd_modify() {
                 # Launch custom variables submenu
                 cmd_modify_custom_vars "$provider_name" "$config_file"
                 echo
+                # Recalculate custom vars count after submenu returns
+                custom_vars_count=0
+                custom_vars_list=$(get_custom_vars_from_config "$config_file")
+                if [ -n "$custom_vars_list" ]; then
+                    custom_vars_count=$(echo "$custom_vars_list" | grep -c '=' || true)
+                fi
                 # Show menu again after returning from submenu
                 echo "Current configuration for '$provider_name':"
                 echo "  0. Provider Name: $provider_name"
@@ -690,7 +726,7 @@ cmd_modify() {
                 echo "  6. Opus Model: $current_opus_model"
                 echo "  7. Subagent Model: $current_subagent_model"
                 echo "  8. Small/Fast Model: $current_small_fast_model"
-                echo "  9. Manage Custom Variables"
+                echo "  9. Manage Custom Variables ($custom_vars_count defined)"
                 echo
                 ;;
             done|DONE)
@@ -1103,8 +1139,8 @@ cmd_modify_custom_vars() {
 
     while true; do
         echo
-        echo -e "${BOLD}Custom Variables for '${CYAN}$provider_name${RESET}${BOLD}':${RESET}"
-        list_custom_vars "$config_file"
+        echo -e "${BOLD}Managed Variables for '${CYAN}$provider_name${RESET}${BOLD}':${RESET}"
+        list_managed_vars "$config_file"
         echo
         echo -e "${BOLD}Options:${RESET}"
         echo -e "  ${BOLD}a.${RESET} ${CYAN}Add new variable${RESET}"
