@@ -43,12 +43,26 @@ COMMANDS:
 
 ## Features
 
-- ✨ **Multi-Provider Support** - Configure and switch between multiple LLM providers
-- ⚡ **Fast Switching** - One command to switch providers and launch Claude Code
-- 🎯 **Smart Model Defaults** - Use a single model for all tiers, or customize per tier
-- 📊 **Provider Management** - List, view status, and remove providers
-- 🔧 **Easy Configuration** - Interactive prompts for setting up new providers
-- 🛡️ **Secure** - API keys stored with restrictive file permissions (chmod 600)
+- Multi-Provider Support - Configure and switch between multiple LLM providers
+- Fast Switching - One command to switch providers and launch Claude Code
+- Smart Model Defaults - Use a single model for all tiers, or customize per tier
+- Provider Management - List, view status, and remove providers
+- Easy Configuration - Interactive prompts for setting up new providers
+- Secure - API keys stored with restrictive file permissions (chmod 600)
+- Custom Environment Variables - Add provider-specific environment variables
+
+## Custom Environment Variables
+
+YACCS supports custom environment variables for each provider. These can be configured during initial setup or added later through the modify command.
+
+Common use cases:
+- `DISABLE_PROMPT_CACHING=1` - For providers without prompt caching support (e.g., Qwen)
+- `ENABLE_DEBUG=true` - For debugging/testing configurations
+- `CUSTOM_TIMEOUT=30` - For performance tuning
+
+You can add, modify, or remove custom variables via `yaccs configure` or `yaccs modify`.
+
+Reference: [Environment Variables](https://code.claude.com/docs/en/settings#environment-variables)
 
 ## Installation
 
@@ -95,7 +109,9 @@ Interactive prompts will ask for:
 - **Base URL** - The LLM provider's API endpoint (e.g., `https://api.openrouter.ai/api/v1`)
 - **API Key** - Your authentication token for the provider
 - **Model ID** - The primary model to use (e.g., `anthropic/claude-3-sonnet-20240229`)
-- **Per-tier Models** (optional) - Different models for haiku (fast), sonnet (balanced), opus (powerful), subagent
+- **Per-tier Models** (optional) - Different models for haiku (fast), sonnet (balanced), opus (powerful), subagent, small-fast
+- **Disable Non-Essential Traffic** (optional) - Reduce Claude Code background API calls
+- **Custom Environment Variables** (optional) - Add provider-specific environment variables
 
 **Example:**
 
@@ -105,8 +121,31 @@ Enter Base URL: https://openrouter.ai/api/v1
 Enter API Key: ••••••••••••••••
 Enter Main Model ID: anthropic/claude-3-sonnet-20240229
 Customize models per tier? (y/n): n
+Disable Non-Essential Traffic? (y/n): n
+Add custom environment variables? (y/n): n
 ✓ Provider 'openrouter' configured successfully
 ```
+
+### Modify a Provider
+
+```bash
+yaccs modify <provider-name>
+```
+
+Opens an interactive menu with options to update provider settings:
+
+- **Options 0-8** - Modify various provider settings (Base URL, API Key, models per tier)
+- **Option T** - Toggle Disable Non-Essential Traffic setting
+- **Option 9** - Manage Custom Environment Variables (add, edit, delete)
+- **Option 0** - Rename provider
+
+### Set Default Provider
+
+```bash
+yaccs use <provider-name>
+```
+
+Sets the default provider. When `yaccs` is run with no arguments, it will use this provider. Useful for setting up a primary provider you use most frequently.
 
 ### Switch to a Provider
 
@@ -162,20 +201,6 @@ Environment variables:
   ...
 ```
 
-### Reset to Default Claude
-
-```bash
-yaccs default
-```
-
-or
-
-```bash
-yaccs reset
-```
-
-Unsets all provider environment variables and launches Claude Code with your default subscription.
-
 ### Remove a Provider
 
 ```bash
@@ -211,15 +236,11 @@ yaccs chutes --help
 # Combine multiple arguments
 yaccs openrouter -r -m opus
 yaccs glm --resume --model sonnet
-
-# Works with default/reset too
-yaccs default -r
-yaccs reset --help
 ```
 
 **All standard Claude Code flags and options are supported**, including:
 - `-r, --resume` - Resume your previous session
-- `-m, --model <tier>` - Specify model tier (haiku/sonnet/opus)
+- `-m, --model <tier>` - Specify model tier (haiku/sonnet/opus/subagent)
 - `--help` - Show Claude Code help
 - Any other Claude Code arguments
 
@@ -262,12 +283,7 @@ Files are created with restrictive permissions (`chmod 600`) to protect sensitiv
    - Records the active provider
    - Passes remaining arguments to the `claude` command
 
-2. **When you run `yaccs default`:**
-   - Unsets all provider environment variables
-   - Clears the active provider tracking
-   - Launches Claude Code with default behavior
-
-3. **Provider configs are simple shell scripts** - You can manually edit them if needed:
+2. **Provider configs are simple shell scripts** - You can manually edit them if needed:
 
 ```bash
 nano ~/.yaccs/providers/myprovidername.sh
@@ -288,8 +304,7 @@ yaccs openrouter
 # Claude Code launches with OpenRouter config...
 
 # Switch to GLM without leaving Claude Code
-yaccs default
-# Back to default Claude subscription
+yaccs glm
 
 # Use local LLM
 yaccs localllm
@@ -317,12 +332,14 @@ Small/Fast model: claude-3-haiku
 Before sharing your system or checking it into version control:
 
 ```bash
-# Reset to default and unset all provider vars
-yaccs default
+# Remove provider configurations to clear all provider vars
+yaccs remove openrouter
+yaccs remove glm
+yaccs remove localllm
 
 # Verify it's clean
 yaccs status
-# Output: No provider active (using default Claude Code)
+# Output: No provider active
 ```
 
 ## Security Considerations
@@ -333,7 +350,7 @@ yaccs status
 - Don't commit `~/.yaccs/` to version control
 - Don't share these files with others
 - Consider removing provider configs before sharing your computer
-- Use `yaccs default` to clear environment variables before multi-user access
+- Use `yaccs remove <provider>` to remove providers and clear environment variables before multi-user access
 
 ## Troubleshooting
 
