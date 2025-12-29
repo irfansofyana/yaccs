@@ -76,8 +76,6 @@ Commands that require user input (configure, remove) handle both interactive TTY
 ### Overview
 Providers can have provider-specific custom environment variables beyond the 9 standard variables. Common use cases:
 - `DISABLE_PROMPT_CACHING=1` for providers without prompt caching support (e.g., Qwen)
-- `ENABLE_DEBUG=true` for debugging/testing configurations
-- `CUSTOM_TIMEOUT=30` for performance tuning
 
 ### Storage Format
 Custom variables are stored in a dedicated section at the end of provider config files:
@@ -94,7 +92,6 @@ export ANTHROPIC_BASE_URL="..."
 # YACCS Custom Variables Section (auto-managed)
 # YACCS_CUSTOM_VARS_START
 export DISABLE_PROMPT_CACHING="1"
-export CUSTOM_TIMEOUT="30"
 # YACCS_CUSTOM_VARS_END
 ```
 

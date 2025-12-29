@@ -55,14 +55,55 @@ COMMANDS:
 
 YACCS supports custom environment variables for each provider. These can be configured during initial setup or added later through the modify command.
 
-Common use cases:
-- `DISABLE_PROMPT_CACHING=1` - For providers without prompt caching support (e.g., Qwen)
-- `ENABLE_DEBUG=true` - For debugging/testing configurations
-- `CUSTOM_TIMEOUT=30` - For performance tuning
-
 You can add, modify, or remove custom variables via `yaccs configure` or `yaccs modify`.
 
-Reference: [Environment Variables](https://code.claude.com/docs/en/settings#environment-variables)
+### Claude Code Environment Variables Reference
+
+The following environment variables are supported by Claude Code:
+
+**Authentication & API:**
+- `ANTHROPIC_API_KEY` - API key sent as `X-Api-Key` header
+- `ANTHROPIC_AUTH_TOKEN` - Custom `Authorization` header value (prefixed with `Bearer`)
+- `ANTHROPIC_CUSTOM_HEADERS` - Custom headers in `Name: Value` format
+
+**Feature Toggles:**
+- `DISABLE_AUTOUPDATER` - Disable automatic updates
+- `DISABLE_BUG_COMMAND` - Disable the `/bug` command
+- `DISABLE_COST_WARNINGS` - Disable cost warning messages
+- `DISABLE_ERROR_REPORTING` - Opt out of Sentry error reporting
+- `DISABLE_TELEMETRY` - Opt out of Statsig telemetry
+- `DISABLE_PROMPT_CACHING` - Disable prompt caching for all models
+- `DISABLE_PROMPT_CACHING_HAIKU` / `_SONNET` / `_OPUS` - Per-model caching control
+- `DISABLE_NON_ESSENTIAL_MODEL_CALLS` - Disable model calls for non-critical paths
+- `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` - Combines DISABLE_AUTOUPDATER, DISABLE_BUG_COMMAND, DISABLE_ERROR_REPORTING, and DISABLE_TELEMETRY
+
+**Claude Code Behavior:**
+- `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS` - Disable Anthropic API beta headers
+- `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` - Disable automatic terminal title updates
+- `CLAUDE_CODE_MAX_OUTPUT_TOKENS` - Set max output tokens for requests
+- `CLAUDE_CODE_SHELL_PREFIX` - Command prefix to wrap all bash commands
+
+**Bash & Timeouts:**
+- `BASH_DEFAULT_TIMEOUT_MS` - Default timeout for long-running bash commands
+- `BASH_MAX_OUTPUT_LENGTH` - Max characters in bash output before truncation
+- `BASH_MAX_TIMEOUT_MS` - Max timeout for long-running bash commands
+- `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR` - Return to original directory after each command
+
+**Limits:**
+- `MAX_MCP_OUTPUT_TOKENS` - Max tokens in MCP tool responses (default: 25000)
+- `MCP_TIMEOUT` - Timeout for MCP server startup (ms)
+- `MCP_TOOL_TIMEOUT` - Timeout for MCP tool execution (ms)
+- `MAX_THINKING_TOKENS` - Token budget for extended thinking
+
+**Proxy:**
+- `HTTP_PROXY` / `HTTPS_PROXY` - Proxy server configuration
+- `NO_PROXY` - Domains/IPs to bypass proxy
+
+**Provider Selection:**
+- `CLAUDE_CODE_USE_BEDROCK` / `_USE_FOUNDRY` / `_USE_VERTEX` - Select LLM provider
+- `CLAUDE_CODE_SKIP_BEDROCK_AUTH` / `_SKIP_FOUNDRY_AUTH` / `_SKIP_VERTEX_AUTH` - Skip auth for gateways
+
+> **Note:** This is a summary of common environment variables. For the complete and up-to-date list, see the [official Claude Code documentation](https://code.claude.com/docs/en/settings#environment-variables).
 
 ## Installation
 
